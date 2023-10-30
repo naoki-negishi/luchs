@@ -1,0 +1,24 @@
+version: '3.8'
+services:
+  hol:
+    build:
+      context: "../"
+      dockerfile: "docker/Dockerfile"
+    container_name: 'hol-ccg'
+    restart: always
+    tty: true
+    volumes:
+      - type: bind
+        source: "../"
+        target: "/code"
+    environment:
+      - PYTHONUNBUFFERED=0
+      - PYTHONPATH=/code
+    working_dir: '/code'
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 4
+              capabilities: [gpu]
