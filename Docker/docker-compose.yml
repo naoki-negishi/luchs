@@ -1,9 +1,9 @@
 version: '3.8'
 services:
-  hol:
+  nli:
     build:
       context: "../"
-      dockerfile: "docker/Dockerfile"
+      dockerfile: "Docker/Dockerfile"
     container_name: 'hol-ccg'
     restart: always
     tty: true
@@ -15,10 +15,12 @@ services:
       - PYTHONUNBUFFERED=0
       - PYTHONPATH=/code
     working_dir: '/code'
+    shm_size: '2gb'
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: 4
+              device_ids: ['0', '1']
+              count: 2
               capabilities: [gpu]
