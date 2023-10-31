@@ -10,35 +10,38 @@ ENV LANG="en_US.UTF-8"
 
 # Pre-configure apt installation to not prompt for timezone selection
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
-    && echo $TZ > /etc/timezone \
+    && echo $TZ > /etc/timezone
 
 # install command tools, python, rust, cuda
 RUN apt update \
-    # && apt-get install build-essential libbz2-dev libdb-dev \
-    #     libreadline-dev libffi-dev libgdbm-dev liblzma-dev \
-    #     libncursesw5-dev libsqlite3-dev libssl-dev \
-    #     zlib1g-dev uuid-dev tk-dev locales-all -y\
     && apt install -y \
-       zsh \
        curl \
+       tar \
+       bzip2 \
        vim \
-       git \
-       # tmux \
-       wget \
-       # rsync \
-       # tree \
-       # lsb-release \
        make \
        gcc \
-       g++ \
-       software-properties-common \
+       g++
+       # zsh \
+       # git \
+       # wget \
+       # tmux \
+       # rsync \
+       # tree \
+       # lsb-release
+
+RUN apt install -y software-properties-common
+RUN add-apt-repository ppa:deadsnakes/ppa
+RUN apt install -y \
        python3.9 \
        python3-pip \
        python3-distro-info \
-    && apt clean \
-    # && rm -rf /var/lib/apt/lists/* /usr/bin/python3 /usr/bin/python3.8 \
+       python3.9-distutils \
+    && apt clean
+
+RUN rm -rf /var/lib/apt/lists/* /usr/bin/python3 /usr/bin/python3.8 \
     && ln -s /usr/bin/python3.9 /usr/bin/python \
-    && ln -s /usr/bin/python3.9 /usr/bin/python3 \
+    && ln -s /usr/bin/python3.9 /usr/bin/python3
     # && mkdir /usr/local/lib/rust \
     # && chmod 0755 $RUST_HOME \
     # && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > ${RUST_HOME}/rustup.sh \
@@ -58,6 +61,8 @@ COPY pyproject.toml .
 # memo: poetry 1.2.X 以降は PEP-440 に従っていないのでエラー出る. 1.1.15 なら OK
 # memo: pytorch だけ cuda に依存するので個別に install する
 RUN pip install --upgrade pip \
+    && pip install poetry==1.1.15 \
+    && poetry config virtualenvs.create false \
     && poetry install --no-root \
     && poetry cache clear pypi --all -n \
     && pip3 install torch torchvision torchaudio \

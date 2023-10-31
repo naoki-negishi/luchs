@@ -1,12 +1,12 @@
 from typing import Optional
 
 import torch
-from luchs.instances import ENC_labels, SNLIBatchInstance
+from preprocess.instances import ENC_labels, SNLIBatchInstance
 from torch import nn
 from torch.nn.functional import normalize
 from torch.nn.init import kaiming_uniform_
 from torch.nn.utils.rnn import pad_sequence
-from transformers import (BertModel, BertPooler, RobertaConfig, RobertaModel,
+from transformers import (BertModel, RobertaConfig, RobertaModel,
                           RobertaTokenizer)
 
 RoBERTaBase = "roberta-base"

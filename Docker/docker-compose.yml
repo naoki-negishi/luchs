@@ -9,7 +9,7 @@ services:
     tty: true
     volumes:
       - type: bind
-        source: "../"
+        source: "/work01/negishi_naoki/syntactic/luchs/"
         target: "/code"
     environment:
       - PYTHONUNBUFFERED=0

@@ -1,0 +1,76 @@
+{
+    "os": "Linux-5.15.0-87-generic-x86_64-with-glibc2.35",
+    "python": "3.9.18",
+    "heartbeatAt": "2023-10-31T03:29:08.096817",
+    "startedAt": "2023-10-31T03:29:07.315060",
+    "docker": null,
+    "cuda": null,
+    "args": [
+        "--yaml_file",
+        "config/test.yaml"
+    ],
+    "state": "running",
+    "program": "/code/training/training.py",
+    "codePath": "training/training.py",
+    "host": "45df411e690b",
+    "username": "root",
+    "executable": "/usr/bin/python",
+    "cpu_count": 6,
+    "cpu_count_logical": 6,
+    "cpu_freq": {
+        "current": 2694.5446666666667,
+        "min": 1200.0,
+        "max": 4000.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 3167.268,
+            "min": 1200.0,
+            "max": 4000.0
+        },
+        {
+            "current": 2600.0,
+            "min": 1200.0,
+            "max": 4000.0
+        },
+        {
+            "current": 2900.0,
+            "min": 1200.0,
+            "max": 4000.0
+        },
+        {
+            "current": 2500.0,
+            "min": 1200.0,
+            "max": 4000.0
+        },
+        {
+            "current": 2500.0,
+            "min": 1200.0,
+            "max": 4000.0
+        },
+        {
+            "current": 2500.0,
+            "min": 1200.0,
+            "max": 4000.0
+        }
+    ],
+    "disk": {
+        "total": 2691.8027114868164,
+        "used": 1624.6299362182617
+    },
+    "gpu": "NVIDIA TITAN X (Pascal)",
+    "gpu_count": 2,
+    "gpu_devices": [
+        {
+            "name": "NVIDIA TITAN X (Pascal)",
+            "memory_total": 12884901888
+        },
+        {
+            "name": "NVIDIA TITAN X (Pascal)",
+            "memory_total": 12884901888
+        }
+    ],
+    "memory": {
+        "total": 62.675174713134766
+    }
+}

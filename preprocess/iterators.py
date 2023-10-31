@@ -1,42 +1,46 @@
 import json
 from itertools import islice
+from math import ceil
 from pathlib import Path
 from typing import Optional, Union
 
 import torch
 from logzero import logger
-from luchs.preprocess.instances import (ENC_labels, HolCCGBatchInstance,
-                                        SNLIBatchInstance, SNLIEvalInfo,
-                                        ModelTypes)
 from tqdm import tqdm
+
+from preprocess.instances import (BASEBIENCODER, BASECLS, HOLCCG, ENC_labels,
+                                  HolCCGBatchInstance, ModelTypes,
+                                  SNLIBatchInstance, SNLIEvalInfo)
 
 BatchInstance = Union[SNLIBatchInstance, HolCCGBatchInstance]
 
 
-class DataLoader:
+class MyDataLoader:
     def __init__(
         self,
         file_path: str,
         batch_size: int,
-        data_size_percentage: float,
-        shuffle: bool,
-        model_type: str,
+        data_size_percentage: float = 100,
+        shuffle: bool = False,
+        model_type: Optional[str] = None,
         dataset: Optional[list[BatchInstance]] = None,
     ):
         self.file_path = file_path
         self.batch_size = batch_size
+        self.data_size_percentage = data_size_percentage
         self.shuffle = shuffle
         self.batch_index = 0
         assert model_type in ModelTypes
+        self.model_type = model_type
 
-        if self.dataset:
+        if dataset:
             self.dataset = dataset
         else:
             self.load_dataset(self.file_path)
 
-        if self.model_type == "snli":
+        if self.model_type in [BASEBIENCODER, BASECLS]:
             self.batches = self.create_snli_batches()
-        elif self.model_type == "holccg":
+        elif self.model_type == HOLCCG:
             self.batches = self.create_holccg_batches()
         else:
             raise ValueError(f"Unknown model type: {self.model_type}")
@@ -50,10 +54,12 @@ class DataLoader:
         # batch = self.batches[self.batch_index]
         # self.batch_index += 1
         # return batch
-        return self.padding(next(self.batches))
+        return next(self.batches)
 
     def __len__(self):
-        return len(self.batches)
+        if self.batches:
+            assert self.length == len(self.batches)
+        return self.length
 
     def load_dataset(self, file_path: str) -> list[dict]:
         self.dataset: list[dict] = []
@@ -74,15 +80,17 @@ class DataLoader:
                 instance = json.loads(jsonl)
                 # if instance["xs_len"] <= self.max_seq_length:
                 self.dataset.append(instance)
+        self.length = ceil(len(self.dataset) / self.batch_size)
 
         logger.info(f"The number of instances: {len(self.dataset)}")
+        logger.info(f"Number of instance per batch: {self.batch_size}")
         # logger.info(f"The number of filtered instances: {len_file - len(self.dataset)}")
-        logger.info(f"The number of batches: {len(self)}")
+        logger.info(f"The number of batches: {self.length}")
 
     def create_snli_batches(self) -> list[SNLIBatchInstance]:
         def padding(batch: list[dict]) -> SNLIBatchInstance:
-            premise: list[str] = [instace["sentece1"] for instace in batch]
-            hypothesis: list[str] = [instace["sentece2"] for instace in batch]
+            premise: list[str] = [instace["sentence1"] for instace in batch]
+            hypothesis: list[str] = [instace["sentence2"] for instace in batch]
             gold_label: list[int] = torch.LongTensor(
                 [ENC_labels[instace["gold_label"]] for instace in batch]
             )

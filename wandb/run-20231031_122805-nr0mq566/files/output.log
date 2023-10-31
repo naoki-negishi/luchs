@@ -1,0 +1,46 @@
+[32m[I 231031 12:28:06 training:186][39m Total batch size: 256
+[32m[I 231031 12:28:06 training:187][39m Max epoch: 30
+[32m[I 231031 12:28:06 training:190][39m Epoch: 1
+[32m[I 231031 12:28:06 training:193][39m Training
+[36m[D 231031 12:28:06 training:195][39m calculating loss on train set
+0it [00:00, ?it/s]
+Traceback (most recent call last):
+  File "/code/training/training.py", line 323, in <module>
+    main()
+  File "/code/training/training.py", line 317, in main
+    finetuning(training_components)
+  File "/code/training/training.py", line 196, in finetuning
+    train_loss = compute_loss_finetuning(tc)
+  File "/code/training/training.py", line 225, in compute_loss_finetuning
+    for n_iter, batch in enumerate(tqdm(data_loader), 1):
+  File "/usr/local/lib/python3.9/dist-packages/tqdm/std.py", line 1133, in __iter__
+    for obj in iterable:
+  File "/code/preprocess/iterators.py", line 57, in __next__
+    return next(self.batches)
+  File "/code/preprocess/iterators.py", line 121, in create_snli_batches
+    minibatch_instance = padding(minibatch)
+  File "/code/preprocess/iterators.py", line 92, in padding
+    premise: list[str] = [instace["sentece1"] for instace in batch]
+  File "/code/preprocess/iterators.py", line 92, in <listcomp>
+    premise: list[str] = [instace["sentece1"] for instace in batch]
+KeyError: 'sentece1'
+Traceback (most recent call last):
+  File "/code/training/training.py", line 323, in <module>
+    main()
+  File "/code/training/training.py", line 317, in main
+    finetuning(training_components)
+  File "/code/training/training.py", line 196, in finetuning
+    train_loss = compute_loss_finetuning(tc)
+  File "/code/training/training.py", line 225, in compute_loss_finetuning
+    for n_iter, batch in enumerate(tqdm(data_loader), 1):
+  File "/usr/local/lib/python3.9/dist-packages/tqdm/std.py", line 1133, in __iter__
+    for obj in iterable:
+  File "/code/preprocess/iterators.py", line 57, in __next__
+    return next(self.batches)
+  File "/code/preprocess/iterators.py", line 121, in create_snli_batches
+    minibatch_instance = padding(minibatch)
+  File "/code/preprocess/iterators.py", line 92, in padding
+    premise: list[str] = [instace["sentece1"] for instace in batch]
+  File "/code/preprocess/iterators.py", line 92, in <listcomp>
+    premise: list[str] = [instace["sentece1"] for instace in batch]
+KeyError: 'sentece1'

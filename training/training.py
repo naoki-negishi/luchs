@@ -13,10 +13,14 @@ import torch.optim as optim
 import wandb
 import yaml
 from logzero import logger
-from luchs.models import BaseBiEncoderModel, BaseCLSModel, HolCCGModel
-from luchs.preprocess.instances import (BASEBIENCODER, BASECLS, HOLCCG,
+
+import sys
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+from preprocess.instances import (BASEBIENCODER, BASECLS, HOLCCG,
                                         ENC_labels, ModelTypes)
-from luchs.preprocess.iterators import MyDataLoader
+from preprocess.iterators import MyDataLoader
+from models.models import BaseBiEncoderModel, BaseCLSModel
 from torch import nn
 from tqdm import tqdm
 from transformers import RobertaConfig, RobertaModel
@@ -30,10 +34,11 @@ class FinetuningArgs:
     """The parameteers will be loaded from a yaml file"""
 
     # load and save
-    train_data_path: str
-    dev_data_path: str
+    train_data_file: str
+    dev_data_file: str
     output_dir: str
     wandb_proj_name: str
+    wandb_run_name: str
     save_all_checkpoints: bool = False
     save_interval: int = 0  # if 0, only save best.model and checkpoint.last
 
@@ -43,6 +48,7 @@ class FinetuningArgs:
     seed: int = 42
     num_train_epochs: int = 100
     early_stopping: int = 5  # if 0, don't stop training until maximum epoch
+    data_size_percentage: int = 100
     per_gpu_train_batch_size: int = 16
     per_gpu_eval_batch_size: int = 32
     gradient_accumulation_steps: int = 16
@@ -66,23 +72,23 @@ class FinetuningArgs:
 
     def set_additional_parameters(self):
         self.device = torch.device(
-            "cuda" if torch.cuda.is_available() and not self.no_cuda else "cpu"
+            "cuda" if torch.cuda.is_available() else "cpu"
         )
-        self.n_gpu = 0 if self.no_cuda else torch.cuda.device_count()
+        self.n_gpu = torch.cuda.device_count()
 
         assert self.seed is not None
         assert self.n_gpu is not None
 
-        random.seed(self.n_seed)
-        np.random.seed(self.n_seed)
-        torch.manual_seed(self.n_seed)
+        random.seed(self.seed)
+        np.random.seed(self.seed)
+        torch.manual_seed(self.seed)
         if self.n_gpu > 0:
-            torch.cuda.manual_seed_all(self.n_seed)
+            torch.cuda.manual_seed_all(self.seed)
 
-        logger.info(f"set seed: {self.n_seed}")
+        logger.info(f"set seed: {self.seed}")
         logger.info(f"device: {self.device}, n_gpu: {self.n_gpu}")
 
-    #     self.learning_rate = float(self.learning_rate)
+        self.learning_rate = float(self.learning_rate)
     #     self.adam_epsilon = float(self.adam_epsilon)
     #     if self.min_learning_rate is None:
     #         self.min_learning_rate = self.learning_rate / 20
@@ -121,7 +127,7 @@ class TrainingComponents:
         assert Path(self.args.dev_data_file).exists()
         self.dev_data_loader = MyDataLoader(
             file_path=self.args.dev_data_file,
-            batch_size=self.args.per_gpu_dev_batch_size,
+            batch_size=self.args.per_gpu_eval_batch_size,
             # n_max_tokens=self.args.per_gpu_train_max_tokens,
             shuffle=False,
             model_type=self.args.model_type,
@@ -132,13 +138,13 @@ class TrainingComponents:
         config = RobertaConfig.from_pretrained(RoBERTaBase)
         base_model = RobertaModel.from_pretrained(RoBERTaBase)
 
-        if self.args.model_type == BaseCLSModel:
+        if self.args.model_type == BASECLS:
             model = BaseCLSModel(
                 config=config,
                 base_model=base_model,
                 device=self.args.device,
             )
-        elif self.args.model_type == BaseBiEncoderModel:
+        elif self.args.model_type == BASEBIENCODER:
             base_model2 = RobertaModel.from_pretrained(RoBERTaBase)
             model = BaseBiEncoderModel(
                 config=config,
@@ -146,8 +152,8 @@ class TrainingComponents:
                 enc_model2=base_model2,
                 device=self.args.device,
             )
-        elif self.args.model_type == HolCCGModel:
-            model = HolCCGModel()
+        # elif self.args.model_type == HolCCG:
+        #     model = HolCCGModel()
         else:
             raise ValueError(f"unsupported value: {args.model_type}")
 
@@ -168,7 +174,7 @@ class TrainingComponents:
             "train_batch_size": args.per_gpu_train_batch_size,
             "eval_batch_size": args.per_gpu_eval_batch_size,
         }
-        wandb.init(project="luchs", name=args.wandb_proj_name, config=wandb_config)
+        wandb.init(project=args.wandb_proj_name, name=args.wandb_run_name, config=wandb_config)
         wandb.watch(models=self.model)
 
 
@@ -212,7 +218,6 @@ def finetuning(tc: TrainingComponents):
 def compute_loss_finetuning(tc: TrainingComponents) -> float:
     args: FinetuningArgs = tc.args
     data_loader = tc.train_data_loader if tc.model.training else tc.dev_data_loader
-    data_loader.create_batches()
     tc.optimizer.zero_grad()
     tc.model.zero_grad()
 
