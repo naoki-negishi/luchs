@@ -38,12 +38,7 @@ class MyDataLoader:
         else:
             self.load_dataset(self.file_path)
 
-        if self.model_type in [BASEBIENCODER, BASECLS]:
-            self.batches = self.create_snli_batches()
-        elif self.model_type == HOLCCG:
-            self.batches = self.create_holccg_batches()
-        else:
-            raise ValueError(f"Unknown model type: {self.model_type}")
+        self.create_batches()
 
     def __iter__(self):
         return self
@@ -57,9 +52,15 @@ class MyDataLoader:
         return next(self.batches)
 
     def __len__(self):
-        if self.batches:
-            assert self.length == len(self.batches)
         return self.length
+
+    def create_batches(self):
+        if self.model_type in [BASEBIENCODER, BASECLS]:
+            self.batches = self.create_snli_batches()
+        elif self.model_type == HOLCCG:
+            self.batches = self.create_holccg_batches()
+        else:
+            raise ValueError(f"Unknown model type: {self.model_type}")
 
     def load_dataset(self, file_path: str) -> list[dict]:
         self.dataset: list[dict] = []
@@ -91,9 +92,10 @@ class MyDataLoader:
         def padding(batch: list[dict]) -> SNLIBatchInstance:
             premise: list[str] = [instace["sentence1"] for instace in batch]
             hypothesis: list[str] = [instace["sentence2"] for instace in batch]
-            gold_label: list[int] = torch.LongTensor(
-                [ENC_labels[instace["gold_label"]] for instace in batch]
-            )
+            gold_label: list[torch.LongTensor] = torch.LongTensor([
+                ENC_labels[instace["gold_label"]] for instace in batch
+                # torch.LongTensor(ENC_labels[instace["gold_label"]]) for instace in batch
+            ])
             EvalInfo: list[dict] = [
                 SNLIEvalInfo(
                     annotator_labels=instace["annotator_labels"],

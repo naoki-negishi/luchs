@@ -1,6 +1,7 @@
 from typing import Optional
 
 import torch
+from logzero import logger
 from preprocess.instances import ENC_labels, SNLIBatchInstance
 from torch import nn
 from torch.nn.functional import normalize
@@ -27,6 +28,7 @@ class BaseCLSModel(nn.Module):
 
         # Embedding model
         self.tokenizer = RobertaTokenizer.from_pretrained(RoBERTaBase)
+        self.padding_value = self.tokenizer.pad_token_id
         self.encoder = base_model
         # self.layer_norm = nn.LayerNorm(self.embed_dim, eps=self.layer_norm_eps)
         # self.embed_dropout_layer = nn.Dropout(self.embed_dropout)
@@ -52,17 +54,32 @@ class BaseCLSModel(nn.Module):
         batch_instance: SNLIBatchInstance,
         entail_label_scores: torch.Tensor,
     ) -> torch.Tensor:
+        entail_label_scores = entail_label_scores.to(self.device)
         gold_labels = batch_instance["gold_label"].to(self.device)
         loss = self.loss_f(entail_label_scores, gold_labels)
 
         return loss
 
     def prediction(self, batch_instance: SNLIBatchInstance) -> torch.Tensor:
-        premise_sentence = batch_instance["premise"]
-        hypothesis_sentence = batch_instance["hypothesis"]
+        premise_sentences: list[str] = batch_instance["premise"]
+        hypothesis_sentences: list[str] = batch_instance["hypothesis"]
 
-        input_ids: torch.LongTensor = self.tokenizer.build_inputs_with_special_tokens(
-            premise_sentence, hypothesis_sentence, padding=True, return_tensors="pt"
+        premise_ids: list[int] = self.tokenizer(premise_sentences).input_ids
+        hypothesis_ids: list[int] = self.tokenizer(hypothesis_sentences).input_ids
+        assert len(premise_ids) == len(hypothesis_ids)
+
+        input_ids: torch.LongTensor = [
+            torch.LongTensor(
+                self.tokenizer.build_inputs_with_special_tokens(
+                    premise_ids, hypothesis_ids
+                )
+            )
+            for premise_ids, hypothesis_ids in zip(premise_ids, hypothesis_ids)
+        ]
+        input_ids = pad_sequence(
+            input_ids,
+            batch_first=True,
+            padding_value=self.padding_value,
         ).to(self.device)
         batch_size, seq_length = input_ids.shape
 
@@ -75,23 +92,19 @@ class BaseCLSModel(nn.Module):
         pooled_output = output.pooler_output
         assert pooled_output.shape == torch.Size([batch_size, self.embed_dim])
 
-        # entail_label_scores = torch.sigmoid(
-        #     self.entail_classifier(last_hidden)
-        # )
         entail_label_scores = torch.sigmoid(self.entail_classifier(pooled_output))
-        assert entail_label_scores.size() == [batch_size, 3]
+        assert entail_label_scores.size() == torch.Size([batch_size, len(ENC_labels)])
 
         return entail_label_scores
 
     def inference(self, batch_instance) -> list[int]:
         with torch.no_grad():
+            batch_size = len(batch_instance["premise"])
             entail_label_scores = self.prediction(batch_instance)
+            assert entail_label_scores.size() == torch.Size([batch_size, len(ENC_labels)])
 
-            batch_size = batch_instance["sentence1"].size(0)
-            assert entail_label_scores.size() == [batch_size, 3]
-
-            entail_output = torch.argmax(entail_label_scores, dim=2).tolist()
-            assert entail_output.size() == [batch_size]
+            entail_output = torch.argmax(entail_label_scores, dim=1).tolist()
+            assert len(entail_output) == batch_size
 
             return entail_output
 
@@ -153,7 +166,7 @@ class BaseBiEncoderModel(nn.Module):
         batch_instance: SNLIBatchInstance,
         entail_label_scores: torch.Tensor,
     ) -> torch.Tensor:
-        gold_labels = batch_instance["label"].to(self.device)
+        gold_labels = batch_instance["label"]
         loss = self.loss_f(entail_label_scores, gold_labels)
 
         return loss
@@ -225,10 +238,7 @@ class BaseBiEncoderModel(nn.Module):
 
         elif self.pooling_type == "cls_before_pooler":
             entail_label_scores = torch.sigmoid(
-                self.entail_classifier(
-                    premise_last_hidden,
-                    hypothesis_last_hidden
-                )
+                self.entail_classifier(premise_last_hidden, hypothesis_last_hidden)
             )
             assert entail_label_scores.size() == [premise_batch_size, 3]
 

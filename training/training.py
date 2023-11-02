@@ -1,5 +1,6 @@
 import argparse
 import random
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -13,17 +14,17 @@ import torch.optim as optim
 import wandb
 import yaml
 from logzero import logger
-
-import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-
-from preprocess.instances import (BASEBIENCODER, BASECLS, HOLCCG,
-                                        ENC_labels, ModelTypes)
-from preprocess.iterators import MyDataLoader
 from models.models import BaseBiEncoderModel, BaseCLSModel
+from preprocess.instances import (BASEBIENCODER, BASECLS, HOLCCG, ENC_labels,
+                                  ModelTypes)
+from preprocess.iterators import MyDataLoader
 from torch import nn
 from tqdm import tqdm
-from transformers import RobertaConfig, RobertaModel
+from transformers import (RobertaConfig, RobertaModel,
+                          get_cosine_schedule_with_warmup)
+
+
 
 LOG_FILE_BASENAME = f"{datetime.now().strftime('%Y%m%d-%H%M')}.log"
 RoBERTaBase = "roberta-base"
@@ -54,7 +55,9 @@ class FinetuningArgs:
     gradient_accumulation_steps: int = 16
     adam_epsilon: float = 1e-8
     # weight_decay: float = 0.0
-    # max_grad_norm: float = 0.0
+    use_grad_clip: bool = False
+    max_grad_norm: float = 0.0
+    warmup_steps: int = 5
     learning_rate: float = 2e-5
     # bert_dropout: float = 0.1  # dropout rate for Attention, FC in RoBERTa
     # embed_dropout: float = 0.0  # for last_hidden_state in SyntacticModel
@@ -71,9 +74,7 @@ class FinetuningArgs:
     pad_token_id: Optional[int] = None
 
     def set_additional_parameters(self):
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.n_gpu = torch.cuda.device_count()
 
         assert self.seed is not None
@@ -89,6 +90,7 @@ class FinetuningArgs:
         logger.info(f"device: {self.device}, n_gpu: {self.n_gpu}")
 
         self.learning_rate = float(self.learning_rate)
+
     #     self.adam_epsilon = float(self.adam_epsilon)
     #     if self.min_learning_rate is None:
     #         self.min_learning_rate = self.learning_rate / 20
@@ -164,8 +166,36 @@ class TrainingComponents:
             model = model.cuda()
         self.model = model
 
-        # set optimizer
+        # set optimizer and scheduler
         self.optimizer = optim.AdamW(self.model.parameters(), lr=args.learning_rate)
+        # num_training_steps = (
+        #     args.num_train_epochs
+        #     * len(self.train_data_loader)
+        #     // args.gradient_accumulation_steps
+        # )
+        # self.lr_scheduler = get_cosine_schedule_with_warmup(
+        #     optimizer=self.optimizer,
+        #     num_warmup_steps=args.warmup_steps,
+        #     num_training_steps=num_training_steps,
+        # )
+        # if args.resume:
+        #     optimizer.load_state_dict(checkpoint['optimizer'])
+        #     scheduler.load_state_dict(checkpoint['scheduler'])
+        # def save_checkpoint(state, is_best, checkpoint, filename='checkpoint.pth.tar'):
+        #     filepath = os.path.join(checkpoint, filename)
+        #     torch.save(state, filepath)
+        #     if is_best:
+        #         shutil.copyfile(filepath, os.path.join(checkpoint,
+        #                                                'model_best.pth.tar'))
+        # save_checkpoint({
+        #         'epoch': epoch + 1,
+        #         'state_dict': model_to_save.state_dict(),
+        #         'ema_state_dict': ema_to_save.state_dict() if args.use_ema else None,
+        #         'acc': test_acc,
+        #         'best_acc': best_acc,
+        #         'optimizer': optimizer.state_dict(),
+        #         'scheduler': scheduler.state_dict(),
+        #     }, is_best, args.out)
 
         wandb_config = {
             "model_type": args.model_type,
@@ -174,7 +204,9 @@ class TrainingComponents:
             "train_batch_size": args.per_gpu_train_batch_size,
             "eval_batch_size": args.per_gpu_eval_batch_size,
         }
-        wandb.init(project=args.wandb_proj_name, name=args.wandb_run_name, config=wandb_config)
+        wandb.init(
+            project=args.wandb_proj_name, name=args.wandb_run_name, config=wandb_config
+        )
         wandb.watch(models=self.model)
 
 
@@ -213,11 +245,24 @@ def finetuning(tc: TrainingComponents):
             f"Dev loss: {dev_loss}, \
                     Dev eval score: {dev_eval_score}"
         )
+        wandb.log(
+            {
+                "epoch": epoch,
+                # "lr": lr_groups,
+                "train_loss": train_loss,
+                "dev_loss": dev_loss,
+                "train_score": train_eval_score,
+                "dev_score": dev_eval_score,
+            },
+            commit=True,
+        )
 
 
 def compute_loss_finetuning(tc: TrainingComponents) -> float:
     args: FinetuningArgs = tc.args
     data_loader = tc.train_data_loader if tc.model.training else tc.dev_data_loader
+    data_loader.create_batches()
+
     tc.optimizer.zero_grad()
     tc.model.zero_grad()
 
@@ -225,12 +270,16 @@ def compute_loss_finetuning(tc: TrainingComponents) -> float:
     for n_iter, batch in enumerate(tqdm(data_loader), 1):
         loss = tc.model(batch)
         if tc.model.training:
-            loss = tc.backward_loss(loss)
+            loss.backward()
             if n_iter % args.gradient_accumulation_steps == 0 or n_iter == len(
                 data_loader
             ):
-                tc.update_optimizer(use_clip_gradient=False)
+                if args.use_grad_clip:
+                    torch.nn.utils.clip_grad_norm_(
+                        tc.model.parameters(), args.max_grad_norm  # type: ignore
+                    )
                 tc.optimizer.step()
+                # tc.lr_scheduler.step()
                 tc.model.zero_grad()
         else:
             loss = float(loss.cpu())
@@ -243,9 +292,8 @@ def compute_loss_finetuning(tc: TrainingComponents) -> float:
 
 
 def evaluate_finetuning(tc: TrainingComponents) -> float:
-    dataset_name = "train" if tc.model.training else "dev"
     data_loader = tc.train_data_loader if tc.model.training else tc.dev_data_loader
-    enc_labels = {v: k for k, v in ENC_labels.items()}
+    data_loader.create_batches()
 
     total_inst_num = 0
     correct_entilment = 0
@@ -254,27 +302,32 @@ def evaluate_finetuning(tc: TrainingComponents) -> float:
 
     for batch in tqdm(data_loader):
         with torch.no_grad():
-            logit = tc.model.inference(batch)
-            prediction = list[map(torch.argmax(logit, dim=1).tolist(), enc_labels)]
+            prediction = tc.model.inference(batch)
             gold_label = batch["gold_label"]
             assert len(prediction) == len(gold_label)
 
             for pred, gold in zip(prediction, gold_label):
-                total_inst_num += 1
-                if gold == 0 and pred == 0:
-                    correct_entilment += 1
-                elif gold == 1 and pred == 1:
-                    correct_neutral += 1
-                elif gold == 2 and pred == 2:
-                    correct_contradiction += 1
-                else:
-                    pass
+                if gold != 3:  # ignore '-'
+                    total_inst_num += 1
+                    if gold == 0 and pred == 0:
+                        correct_entilment += 1
+                    elif gold == 1 and pred == 1:
+                        correct_neutral += 1
+                    elif gold == 2 and pred == 2:
+                        correct_contradiction += 1
+                    else:
+                        pass
+
+    logger.info(f"total_inst_num: {total_inst_num}")
+    logger.info("correct nums")
+    logger.info(f"entilment: {correct_entilment}, \
+                neutral: {correct_neutral}, \
+                contradiction: {correct_contradiction}")
 
     micro_avg = (
         correct_entilment + correct_neutral + correct_contradiction
     ) / total_inst_num
 
-    wandb.log({f"{dataset_name}_score": micro_avg}, commit=False)
     return micro_avg
 
 

@@ -1,7 +1,7 @@
 import torch
 from typing import TypedDict
 
-ENC_labels = {"entailment": 0, "neutral": 1, "contradiction": 2}
+ENC_labels = {"entailment": 0, "neutral": 1, "contradiction": 2, "-": 3}
 
 BASECLS = "Baseline-CLS"
 BASEBIENCODER = "Baseline-BiEncode"
